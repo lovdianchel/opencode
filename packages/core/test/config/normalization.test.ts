@@ -272,6 +272,44 @@ describe("ConfigNormalize", () => {
     })
   })
 
+  test("defaults omitted model prices to zero without dropping the provider", () => {
+    const result = normalized({
+      provider: { legacy: { models: { chat: { cost: { input: 1, context_over_200k: { output: 4 } } } } } },
+      providers: {
+        native: {
+          models: {
+            single: { cost: { output: 2 } },
+            tiers: { cost: [{ input: 3 }, { tier: { type: "context", size: 200000 }, output: 4 }] },
+          },
+        },
+      },
+    })
+    expect(result.diagnostics).toEqual([])
+    expect(result.encoded.providers).toMatchObject({
+      legacy: {
+        models: {
+          chat: {
+            cost: [
+              { input: 1, output: 0 },
+              { tier: { type: "context", size: 200000 }, input: 0, output: 4 },
+            ],
+          },
+        },
+      },
+      native: {
+        models: {
+          single: { cost: { input: 0, output: 2 } },
+          tiers: {
+            cost: [
+              { input: 3, output: 0 },
+              { tier: { type: "context", size: 200000 }, input: 0, output: 4 },
+            ],
+          },
+        },
+      },
+    })
+  })
+
   test("uses a valid retired provider alias when the canonical legacy entry is malformed", () => {
     const result = normalized({
       provider: {

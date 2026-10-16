@@ -165,8 +165,14 @@ export function normalize(input: unknown): Result {
     diagnostics,
   )
 
-  const legacyProviders = migrateProviders(input.provider, diagnostics)
-  const nativeProviders = decodeMap(input.providers, ConfigProvider.Info, ["providers"], diagnostics, decodeEncoded)
+  const legacyProviders = migrateProviders(defaultCosts(input.provider), diagnostics)
+  const nativeProviders = decodeMap(
+    defaultCosts(input.providers),
+    ConfigProvider.Info,
+    ["providers"],
+    diagnostics,
+    decodeEncoded,
+  )
   mergeMap(
     encoded,
     "providers",
@@ -558,6 +564,31 @@ function migratePermissions(value: unknown, diagnostics: Diagnostic[]) {
         : [{ action: ConfigMigrateV1.normalizeAction(action), resource, effect: decoded }]
     })
   })
+}
+
+// Omitted model prices default to zero instead of invalidating the whole provider.
+function defaultCosts(providers: unknown) {
+  if (!isRecord(providers)) return providers
+  return Object.fromEntries(
+    Object.entries(providers).map(([id, provider]) => {
+      if (!isRecord(provider) || !isRecord(provider.models)) return [id, provider]
+      const models = Object.fromEntries(
+        Object.entries(provider.models).map(([modelID, model]) => {
+          if (!isRecord(model) || model.cost === undefined) return [modelID, model]
+          const cost = Array.isArray(model.cost) ? model.cost.map(defaultCost) : defaultCost(model.cost)
+          return [modelID, { ...model, cost }]
+        }),
+      )
+      return [id, { ...provider, models }]
+    }),
+  )
+}
+
+function defaultCost(cost: unknown): unknown {
+  if (!isRecord(cost)) return cost
+  const result = { ...cost, input: cost.input ?? 0, output: cost.output ?? 0 }
+  if (isRecord(cost.context_over_200k)) return { ...result, context_over_200k: defaultCost(cost.context_over_200k) }
+  return result
 }
 
 function migrateProviders(value: unknown, diagnostics: Diagnostic[]) {
